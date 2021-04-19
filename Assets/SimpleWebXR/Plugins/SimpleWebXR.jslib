@@ -116,6 +116,23 @@ mergeInto(LibraryManager.library, {
     // start y position that is substract to all y position so that start y is forced to 0
     _yOffset = 0;
 
+    // GL: XR objects for doing hit tests
+    xrViewerSpace = null;
+    xrHitTestSource = null;
+
+    _dataArraySetPose = function (transform, floatStartId){
+      var position = transform.position;
+      _dataArray[floatStartId + 0] = position.x;
+      _dataArray[floatStartId + 1] = position.y - _yOffset;
+      _dataArray[floatStartId + 2] = position.z;
+
+      var orientation = transform.orientation;
+      _dataArray[floatStartId + 3] = orientation.x;
+      _dataArray[floatStartId + 4] = orientation.y;
+      _dataArray[floatStartId + 5] = orientation.z;
+      _dataArray[floatStartId + 6] = orientation.w;
+    }
+
     // copy camera data in shared buffer
     _dataArraySetView = function (view, id) {
       var floatStartId = id * 27;
@@ -340,6 +357,21 @@ mergeInto(LibraryManager.library, {
         }
       }
 
+      // GL: Do hit tests
+      var hitTestPoseDataArrayStartIndex = 105;
+      var hitTestHitDataArrayIndex = 112;
+
+      _dataArray[hitTestHitDataArrayIndex] = 0;
+
+      if (xrHitTestSource && pose) {
+        var hitTestResults = frame.getHitTestResults(xrHitTestSource);
+        if (hitTestResults.length > 0) {
+          var pose = hitTestResults[0].getPose(_arSession.localSpace);
+          if(pose) _dataArraySetPose(pose.transform, hitTestPoseDataArrayStartIndex);
+          _dataArray[hitTestHitDataArrayIndex] = 1;
+        }
+      }
+
       // Propagate controller events and acknowledge event
       _byteArray[1] |= _controllerEvents[0];
       _byteArray[2] |= _controllerEvents[1];
@@ -458,7 +490,7 @@ mergeInto(LibraryManager.library, {
 
     // Request the WebXR session and create the WebGL layer
     // In first approach, AR is prioritary over VR
-    navigator.xr.requestSession(_isArSupported ? 'immersive-ar' : 'immersive-vr', { optionalFeatures: ['local-floor', 'hand-tracking'] }).then(function (session) {
+    navigator.xr.requestSession(_isArSupported ? 'immersive-ar' : 'immersive-vr', { optionalFeatures: ['local-floor', 'hand-tracking', 'hit-test'] }).then(function (session) {
       _arSession = session;
       _canvasWidth = GLctx.canvas.width;
       _canvasHeight = GLctx.canvas.height;
@@ -513,6 +545,15 @@ mergeInto(LibraryManager.library, {
         // requestAnimationFrame should be call to make in work on Quest
         Browser.requestAnimationFrame(_rAFCB);
       });
+
+      // GL: get a reference space from the viewer perspective in order to cast
+      // a ray into the world.
+      session.requestReferenceSpace('viewer').then(function (refSpace) {
+        xrViewerSpace = refSpace;
+        session.requestHitTestSource({ space: xrViewerSpace }).then(function (hitTestSource) {
+          xrHitTestSource = hitTestSource;
+        });
+      });
     });
   },
 
@@ -520,6 +561,11 @@ mergeInto(LibraryManager.library, {
   // Ends the session
   InternalEndSession: function () {
     if (_arSession) _arSession.end();
+    if(xrHitTestSource)
+    {
+        xrHitTestSource.cancel();
+        xrHitTestSource = null;
+    }
   },
 
   /****************************************************************************/

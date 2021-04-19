@@ -210,6 +210,8 @@ namespace Rufus31415.WebXR
         /// </summary>
         public static Camera RightEye => _cameras[1];
 
+        public static HitTestResult HitTestResult { get; private set; }
+
         /// <summary>
         /// Initialize the binding with the WebXR API, via shared arrays
         /// </summary>
@@ -309,6 +311,8 @@ namespace Rufus31415.WebXR
             LeftInput.Available = _byteArray[44] != 0;
             RightInput.Available = _byteArray[45] != 0;
 
+            UpdateHitTest();
+
             // Input source change event
             if (_byteArray[3] != 0)
             {
@@ -327,6 +331,29 @@ namespace Rufus31415.WebXR
                 InSession = false;
                 SessionEnd.Invoke();
             }
+        }
+
+        private static void UpdateHitTest()
+        {
+            const int HIT_TEST_POSE_DATA_ARRAY_START_INDEX = 105;
+            const int HIT_TEST_HIT_DATA_ARRAY_INDEX = 112;
+
+            var positionPart = ToUnityPosition(
+                _dataArray[HIT_TEST_POSE_DATA_ARRAY_START_INDEX + 0],
+                _dataArray[HIT_TEST_POSE_DATA_ARRAY_START_INDEX + 1],
+                _dataArray[HIT_TEST_POSE_DATA_ARRAY_START_INDEX + 2]
+                );
+
+            var rotationPart = ToUnityRotation(
+                _dataArray[HIT_TEST_POSE_DATA_ARRAY_START_INDEX + 3],
+                _dataArray[HIT_TEST_POSE_DATA_ARRAY_START_INDEX + 4],
+                _dataArray[HIT_TEST_POSE_DATA_ARRAY_START_INDEX + 5],
+                _dataArray[HIT_TEST_POSE_DATA_ARRAY_START_INDEX + 6]
+                );
+
+            var wasHit = _dataArray[HIT_TEST_HIT_DATA_ARRAY_INDEX] == 1;
+
+            HitTestResult = new HitTestResult(positionPart, rotationPart, wasHit);
         }
 
         /// <summary>
@@ -391,7 +418,9 @@ namespace Rufus31415.WebXR
         // [102] : right input haptic pulse value
         // [103] : left input haptic pulse duration
         // [104] : right input haptic pulse duration
-        private static readonly float[] _dataArray = new float[105];
+        // [105] -> [111] : Hit test pose pos.x, pos.y, pos.z, rot.x, rot.y, rot.z, rot.w
+        // [112] : Hit test hit something
+        private static readonly float[] _dataArray = new float[113];
 
         // Shared float array with javascript.
         // [0] : number of views (0 : session is stopped)
@@ -1143,5 +1172,19 @@ namespace Rufus31415.WebXR
         public const int LITTLE_PHALANX_DISTAL = 23;
         public const int LITTLE_PHALANX_TIP = 24;
         #endregion
+    }
+
+    public class HitTestResult
+    {
+        public Vector3 Position { get; private set; }
+        public Quaternion Rotation { get; private set; }
+        public bool Hit { get; private set; }
+
+        public HitTestResult(Vector3 pos, Quaternion rot, bool hit)
+        {
+            Position = pos;
+            Rotation = rot;
+            Hit = hit;
+        }
     }
 }
